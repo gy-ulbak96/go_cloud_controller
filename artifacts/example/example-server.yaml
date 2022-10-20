@@ -1,0 +1,6 @@
+apiVersion: cloudcontroller.k8s.io/v1alpha1
+kind: Server
+metadata:
+  name: example-server
+spec:
+  serverName: example-server
