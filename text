@@ -1,0 +1,115 @@
+package main
+
+import (
+        "encoding/json"
+        "fmt"
+        "io/ioutil"
+        "log"
+        "math/rand"
+        "net/http"
+        "os"
+        "strconv"
+
+        "github.com/gin-gonic/gin"
+)
+
+var vms = map[string]string{
+        "dummy": "dummy",
+}
+
+type JSONResult struct {
+        Message string  `json:"message"`
+}
+
+func main() {
+        router := gin.Default()
+        router.POST("/servers", createServer)
+        router.GET("/servers/:uuid", getServer)
+        router.DELETE("/servers/:uuid", deleteServer)
+
+        httpPort := os.Getenv("HTTP_PORT")
+        if httpPort == "" {
+                httpPort = "8080"
+        }
+    router.Run(":" + httpPort)
+}
+
+func createServer(c *gin.Context) {
+        body := c.Request.Body
+        value, err := ioutil.ReadAll(body)
+        if err != nil {
+                log.Printf("%+v", err.Error())
+                c.IndentedJSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+                return
+        }
+
+        var data map[string]interface{}
+        json.Unmarshal([]byte(value), &data)
+        vmName, exist := data["name"].(string)
+        if !exist {
+                c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Bad request"})
+                return
+        }
+
+        var res struct {
+                Id string `json:"id"`
+        }
+        min, max := 10000, 99999
+        vmId := vmName + "-" + strconv.Itoa(rand.Intn(max - min) + min)
+        res.Id = vmId
+
+        val, err := json.Marshal(vms)
+        if err != nil {
+                fmt.Println(err)
+        }
+        fmt.Println("VM list: " + string(val))
+
+        if _, exist := vms[vmName]; exist {
+    c.IndentedJSON(http.StatusConflict, gin.H{"message": "Failed to create VM because of VM name duplication"})
+                return
+        }
+        vms[vmName] = vmId
+
+        if vmName == "StatusInternalServerError" {
+                c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Internal server error"})
+        } else {
+                c.IndentedJSON(http.StatusCreated, res)
+        }
+}
+
+func getServer(c *gin.Context) {
+        uuid := c.Param("uuid")
+        var res struct {
+                Id string `json:"id"`
+                Name string `json:"name"`
+        }
+
+        for key, val := range vms {
+                //fmt.Println(key, val)
+                if val == uuid {
+                        res.Name, res.Id = key, val 
+                        c.IndentedJSON(http.StatusOK, res)
+                        return
+                }
+        }
+
+        if uuid == "StatusInternalServerError" {
+                c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Internal server error"})
+        } else {
+                c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Not found"})
+        }
+}
+
+func deleteServer(c *gin.Context) {
+        uuid := c.Param("uuid")
+
+        for key, val := range vms {
+                //fmt.Println(key, val)
+                if val == uuid {
+                        delete(vms, key)
+                        c.IndentedJSON(http.StatusNoContent, nil)
+                        return
+                }
+        }
+
+        c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Internal server error"})

@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"time"
+	"math/rand"
 
 	// appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -42,6 +43,7 @@ import (
 	samplescheme "github.com/gy-ulbak96/go_cloud_controller/pkg/generated/clientset/versioned/scheme"
 	informers "github.com/gy-ulbak96/go_cloud_controller/pkg/generated/informers/externalversions/cloudcontroller/v1alpha1"
 	listers "github.com/gy-ulbak96/go_cloud_controller/pkg/generated/listers/cloudcontroller/v1alpha1"
+	cloudclient "github.com/gy-ulbak96/go_cloud_controller/cloudclient"
 )
 
 const controllerAgentName = "cloudcontroller"
@@ -119,6 +121,7 @@ func NewController(
 		UpdateFunc: func(old, new interface{}) {
 			controller.enqueueServer(new)
 		},
+		DeleteFunc: controller.enqueueServer,
 	})
 	// Set up an event handler for when Deployment resources change. This
 	// handler will lookup the owner of the given Deployment, and if it is
@@ -271,6 +274,20 @@ func (c *Controller) syncHandler(key string) error {
 		return nil
 	}
 //------------------------------------------------------------------
+  C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
+	realserver, err := C1.GetServer("test-92508")
+	if err != nil {
+		//없으면 만들고
+		klog.Infof("first")
+		S1 := cloudclient.ServerSpec{"test"}
+		C1.CreateServer(&S1)
+		klog.Infof("second")
+	}
+	//있으면 가만히
+  fmt.Println(realserver)
+	klog.Infof("third")
+
+
 	// // Get the deployment with the name specified in Server.spec
 	// deployment, err := c.deploymentsLister.Deployments(server.Namespace).Get(deploymentName)
 	// // If the resource doesn't exist, we'll create it
@@ -311,6 +328,7 @@ func (c *Controller) syncHandler(key string) error {
 	// Finally, we update the status block of the Server resource to reflect the
 	// current state of the world
 	//-------------------------------------------------------------------------
+	klog.Infof("30sec return")
 	err = c.updateServerStatus(server)
 	if err != nil {
 		return err
@@ -320,12 +338,31 @@ func (c *Controller) syncHandler(key string) error {
 	return nil
 }
 
+func randomString(length int) string {
+    rand.Seed(time.Now().UnixNano())
+    b := make([]byte, length)
+    rand.Read(b)
+    return fmt.Sprintf("%x", b)[:length]
+}
+
 func (c *Controller) updateServerStatus(server *cloudcontrollerv1alpha1.Server) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
 	serverCopy := server.DeepCopy()
-	serverCopy.Status.ServerId = server.Status.ServerId
+	klog.Infof("whywhywhy")
+  if server.Status.ServerId == "" {
+		server.Status.ServerId = randomString(5)
+		serverCopy.Status.ServerId = server.Status.ServerId
+	}
+	
+	// serverCopy.Status.ServerId = server.Status.ServerId
+	// C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
+	// S1 := cloudclient.ServerSpec{"test"}
+	// C1.CreateServer(&S1)
+
+
+
 	// If the CustomResourceSubresources feature gate is not enabled,
 	// we must use Update instead of UpdateStatus to update the Status block of the Foo resource.
 	// UpdateStatus will not allow changes to the Spec of the resource,
@@ -352,40 +389,40 @@ func (c *Controller) enqueueServer(obj interface{}) {
 // // objects metadata.ownerReferences field for an appropriate OwnerReference.
 // // It then enqueues that Foo resource to be processed. If the object does not
 // // have an appropriate OwnerReference, it will simply be skipped.
-// func (c *Controller) handleObject(obj interface{}) {
-// 	var object metav1.Object
-// 	var ok bool
-// 	if object, ok = obj.(metav1.Object); !ok {
-// 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-// 		if !ok {
-// 			utilruntime.HandleError(fmt.Errorf("error decoding object, invalid type"))
-// 			return
-// 		}
-// 		object, ok = tombstone.Obj.(metav1.Object)
-// 		if !ok {
-// 			utilruntime.HandleError(fmt.Errorf("error decoding object tombstone, invalid type"))
-// 			return
-// 		}
-// 		klog.V(4).Infof("Recovered deleted object '%s' from tombstone", object.GetName())
-// 	}
-// 	klog.V(4).Infof("Processing object: %s", object.GetName())
-// 	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
-// 		// If this object is not owned by a Foo, we should not do anything more
-// 		// with it.
-// 		if ownerRef.Kind != "Server" {
-// 			return
-// 		}
+func (c *Controller) handleObject(obj interface{}) {
+	var object metav1.Object
+	var ok bool
+	if object, ok = obj.(metav1.Object); !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object, invalid type"))
+			return
+		}
+		object, ok = tombstone.Obj.(metav1.Object)
+		if !ok {
+			utilruntime.HandleError(fmt.Errorf("error decoding object tombstone, invalid type"))
+			return
+		}
+		klog.V(4).Infof("Recovered deleted object '%s' from tombstone", object.GetName())
+	}
+	klog.V(4).Infof("Processing object: %s", object.GetName())
+	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
+		// If this object is not owned by a Foo, we should not do anything more
+		// with it.
+		if ownerRef.Kind != "Server" {
+			return
+		}
 
-// 		server, err := c.serversLister.Servers(object.GetNamespace()).Get(ownerRef.Name)
-// 		if err != nil {
-// 			klog.V(4).Infof("ignoring orphaned object '%s/%s' of server '%s'", object.GetNamespace(), object.GetName(), ownerRef.Name)
-// 			return
-// 		}
+		server, err := c.serversLister.Servers(object.GetNamespace()).Get(ownerRef.Name)
+		if err != nil {
+			klog.V(4).Infof("ignoring orphaned object '%s/%s' of server '%s'", object.GetNamespace(), object.GetName(), ownerRef.Name)
+			return
+		}
 
-// 		c.enqueueServer(server)
-// 		return
-// 	}
-// }
+		c.enqueueServer(server)
+		return
+	}
+}
 
 // // newDeployment creates a new Deployment for a Foo resource. It also sets
 // // the appropriate OwnerReferences on the resource so handleObject can discover
