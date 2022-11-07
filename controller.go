@@ -259,9 +259,15 @@ func (c *Controller) syncHandler(key string) error {
 		// processing.
 		if errors.IsNotFound(err) {
 			utilruntime.HandleError(fmt.Errorf("server '%s' in work queue no longer exists", key))
+			C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
+			// S1 := cloudclient.ServerSpec{"test"}
+			// serverId := server.Status.ServerId
+			// klog.Infof(serverId)
+			C1.DeleteServer(Realserver)
 			return nil
 		}
 
+		//여기에다 추가되면 리소스가 삭제된 다음에야 mockup 서버가 삭제됌.
 		return err
 	}
 
@@ -274,19 +280,28 @@ func (c *Controller) syncHandler(key string) error {
 		return nil
 	}
 //------------------------------------------------------------------
-  C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
-	realserver, err := C1.GetServer("test-92508")
-	if err != nil {
-		//없으면 만들고
-		klog.Infof("first")
-		S1 := cloudclient.ServerSpec{"test"}
-		C1.CreateServer(&S1)
-		klog.Infof("second")
-	}
-	//있으면 가만히
-  fmt.Println(realserver)
-	klog.Infof("third")
+	// C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
+  // S1 := cloudclient.ServerSpec{"test"}
+	// Realserverid, err := C1.CreateServer(&S1)
+	// if err != nil {
+	// 	klog.Infof("pass")
+	// }
+  // klog.Infof(Realserverid.Id)
+	// realserver, err := C1.GetServer(Realserverid.Id)
+	// if err != nil {
+	// 	S1 := cloudclient.ServerSpec{"test"}
+	// 	C1.CreateServer(&S1)
+	// }
+  // fmt.Println(realserver)
 
+
+	// realserver, err := C1.GetServer(Realserverid.Id)
+	// if err != nil {
+	// 	S1 := cloudclient.ServerSpec{"test"}
+	// 	Realserverid, _ := C1.CreateServer(&S1)
+	// 	klog.Infof("second")
+	// 	klog.Infof(Realserverid.Id)
+	// }
 
 	// // Get the deployment with the name specified in Server.spec
 	// deployment, err := c.deploymentsLister.Deployments(server.Namespace).Get(deploymentName)
@@ -345,14 +360,24 @@ func randomString(length int) string {
     return fmt.Sprintf("%x", b)[:length]
 }
 
+var Realserver string
+
 func (c *Controller) updateServerStatus(server *cloudcontrollerv1alpha1.Server) error {
 	// NEVER modify objects from the store. It's a read-only, local cache.
 	// You can use DeepCopy() to make a deep copy of original object and modify this copy
 	// Or create a copy manually for better performance
 	serverCopy := server.DeepCopy()
-	klog.Infof("whywhywhy")
+	//serverid가 없을 경우에 serverid주입
   if server.Status.ServerId == "" {
-		server.Status.ServerId = randomString(5)
+		C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
+  	S1 := cloudclient.ServerSpec{"test"}
+		Realserverid, err := C1.CreateServer(&S1)
+		if err != nil {
+			klog.Infof("pass")
+		}
+  	klog.Infof(Realserverid.Id)
+    Realserver = string(Realserverid.Id)
+		server.Status.ServerId = Realserver
 		serverCopy.Status.ServerId = server.Status.ServerId
 	}
 	

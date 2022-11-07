@@ -7,6 +7,7 @@ import (
   "net/http"
   "io/ioutil"
 	"k8s.io/klog/v2"
+	// "reflect"
 )
 
 func (c *CloudClient) CreateServer(spec *ServerSpec) (Server, error)  {
@@ -22,6 +23,7 @@ func (c *CloudClient) createServer(spec *ServerSpec) (Server, error) {
 		return Server{}, err
 	}
 	klog.Infof(string(payload))
+	klog.Infof("id print")
   client := &http.Client {}
   req, err := http.NewRequest(method, url, strings.NewReader(string(payload)))
   if err != nil {
@@ -45,7 +47,18 @@ func (c *CloudClient) createServer(spec *ServerSpec) (Server, error) {
   }
 	var data map[string]interface{}
 	json.Unmarshal([]byte(body), &data)
+	// Realserverid := ""
+	// for key, value := range data {
+	// 	fmt.Println(key, value)
+	// 	if key == "id" {
+	// 		Realserverid = string(value)
+	// 	}
+		
+	// }
 	fmt.Println(string(body))
+
+	// fmt.Println(string(body.id))
+	klog.Infof("this is result")
 
 	if res.StatusCode != 201 {
 		err := HttpError{
