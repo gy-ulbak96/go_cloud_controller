@@ -20,13 +20,9 @@ import (
 	"flag"
 	"time"
 
-	// kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
-	// Uncomment the following line to load the gcp plugin (only required to authenticate against GKE clusters).
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-
 	clientset "github.com/gy-ulbak96/go_cloud_controller/pkg/generated/clientset/versioned"
 	informers "github.com/gy-ulbak96/go_cloud_controller/pkg/generated/informers/externalversions"
 	"github.com/gy-ulbak96/go_cloud_controller/signals"
@@ -59,7 +55,6 @@ func main() {
 		klog.Fatalf("Error building example clientset: %s", err.Error())
 	}
 
-	// kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 	exampleInformerFactory := informers.NewSharedInformerFactory(exampleClient, time.Second*30)
 
 	controller := NewController(kubeClient, exampleClient,
