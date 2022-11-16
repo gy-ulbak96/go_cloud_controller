@@ -49,6 +49,7 @@ const (
 	ErrResourceExists = "ErrResourceExists"
 	MessageResourceExists = "Resource %q already exists and is not managed by Server"
 	MessageResourceSynced = "Server synced successfully"
+	cloudUrl = "http://127.0.0.1:8080"
 )
 
 type Controller struct {
@@ -171,8 +172,8 @@ func (c *Controller) syncHandler(key string) error {
 	if err != nil {
 		if errors.IsNotFound(err) {
 			utilruntime.HandleError(fmt.Errorf("server '%s' in work queue no longer exists", key))
-			C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
-			C1.DeleteServer(Realserver)
+			// C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
+			// C1.DeleteServer(Realserver)
 			return nil
 		}
 		return err
@@ -184,8 +185,102 @@ func (c *Controller) syncHandler(key string) error {
 		return nil
 	}
 
+  client, err := cloudclient.CreateClient(cloudUrl)  
+  if err != nil {                                                                                                          
+      utilruntime.HandleError(fmt.Errorf("%+v", err.Error()))
+      return nil
+  }
+
+   if server.Status.ServerId != "" {     
+
+        // Server object의 deletion timestamp와 finalizer field를 가져옵니다.                                                                          
+        deletionTimestamp := server.ObjectMeta.GetDeletionTimestamp()
+        finalizer := server.ObjectMeta.GetFinalizers()
+        
+
+        // finalizer와 deletion timestamp가 있으면 실행합니다. (사용자가 Server object를 삭제한 경우)
+        if len(finalizer) > 0  && deletionTimestamp != nil {
+            // Cloud API를 호출하여 Cloud에 Server가 실제 있는지 체크합니다.
+            serverId := server.Status.ServerId
+            _, errGetServer := client.GetServer(serverId)
+            if errGetServer != nil {
+                utilruntime.HandleError(fmt.Errorf("%+v", errGetServer.Error()))
+                return nil
+            }
+
+            // Cloud API를 호출하여 server를 삭제합니다.
+
+            errDeleteServer := deleteServer(serverId)
+            if errDeleteServer != nil {
+                utilruntime.HandleError(fmt.Errorf("%+v", errDeleteServer.Error()))
+                return nil
+            }
+            fmt.Println("Success to delete on " + serverName)
+
+            // Server  object에서 finalizer를 제거합니다. 기존 server object를 직접 수정하지 않고 DeepCopy를 통해 복사한 object를 수정한 뒤 업데이트합니다.
+
+            serverCopy := server.DeepCopy()
+            serverCopy.ObjectMeta.SetFinalizers([]string{})
+            _, errUpdate := c.sampleclientset.CloudcontrollerV1alpha1().Servers(server.Namespace).Update(context.TODO(), serverCopy, metav1.UpdateOptions{})
+            if errUpdate != nil {
+                utilruntime.HandleError(fmt.Errorf("%+v", errUpdate.Error()))
+                return nil
+            }
+            fmt.Println("Success to remove a finalizer on " + serverName)
+            return nil
+        }
+
+        // finalizer와 deletion timestamp가 없으면 실행합니다.(Server가 생성된 직후 최초 한번 실행. finalizer를 추가해주어 실제 서버가 삭제되기 전까지
+
+        // server object가 제거되지 않도록 유지하기 위한 목적)
+
+        if len(finalizer) == 0 && deletionTimestamp == nil {
+
+            // Server object에 finalizer를 추가합니다.(위와 마찬가지로 deepcopy를 통해 업데이트)
+            serverCopy := server.DeepCopy()
+            serverCopy.ObjectMeta.SetFinalizers([]string{"cloudcontroller.k8s.io"})
+            _, err := c.sampleclientset.CloudcontrollerV1alpha1().Servers(server.Namespace).Update(context.TODO(), serverCopy, metav1.UpdateOptions{})
+            if err != nil {
+                utilruntime.HandleError(fmt.Errorf("%+v", err.Error()))
+                return nil
+            }
+            fmt.Println("Success to add a finalizer " + serverName)
+        }
+
+        // Cloud API를 호출하여 server가 생성되어 있는지 체크합니다. 생성되어 있으면 nil을 return하여 handler를 종료합니다.
+
+        res, _ := client.GetServer(server.Status.ServerId)
+        if res.Name != "" {
+            fmt.Println(res.Name + " has already been created. Skip to create the Server")
+            serverStatus := cloudcontrollerv1alpha1.ServerStatus{
+                ServerId: server.Status.ServerId,
+            }
+            err = c.updateServerStatus(server, serverStatus)
+            if err != nil {
+                return err
+            }
+            return nil
+        }
+    }
+
+	serverSpec := cloudclient.ServerSpec{
+		Name: serverName,
+	}
+
+  res,err := client.CreateServer(&serverSpec)
+	if err != nil{
+		utilruntime.HandleError(fmt.Errorf("%+v", err.Error()))
+    return nil
+	}
+	
+	serverId := res.Id
+  serverStatus := cloudcontrollerv1alpha1.ServerStatus{
+		ServerId: serverId,
+	}
+	
+
 	klog.Infof("30sec return")
-	err = c.updateServerStatus(server)
+	err = c.updateServerStatus(server, serverStatus)
 	if err != nil {
 		return err
 	}
@@ -195,22 +290,11 @@ func (c *Controller) syncHandler(key string) error {
 }
 
 
-var Realserver string
 
-func (c *Controller) updateServerStatus(server *cloudcontrollerv1alpha1.Server) error {
+func (c *Controller) updateServerStatus(server *cloudcontrollerv1alpha1.Server, serverStatus cloudcontrollerv1alpha1.ServerStatus) error {
 	serverCopy := server.DeepCopy()
 	//serverid가 없을 경우에 serverid주입
-  if server.Status.ServerId == "" {
-		C1 := cloudclient.CloudClient{"http://127.0.0.1:8080"}
-  	S1 := cloudclient.ServerSpec{"test"}
-		Realserverid, err := C1.CreateServer(&S1)
-		if err != nil {
-			klog.Infof("pass")
-		}
-  	klog.Infof(Realserverid.Id)
-    Realserver = string(Realserverid.Id)
-		serverCopy.Status.ServerId = Realserver
-	}
+  serverCopy.Status.ServerId = serverStatus.ServerId
 	_, err := c.sampleclientset.CloudcontrollerV1alpha1().Servers(server.Namespace).UpdateStatus(context.TODO(), serverCopy, metav1.UpdateOptions{})
 	return err
 }
@@ -226,3 +310,19 @@ func (c *Controller) enqueueServer(obj interface{}) {
 	c.workqueue.Add(key)
 }
 
+
+func deleteServer(id string) error{
+	  client, err := cloudclient.CreateClient(cloudUrl)
+    if err != nil {
+        utilruntime.HandleError(fmt.Errorf("%+v", err.Error()))
+        return err
+    }
+
+    errDeleteServer := client.DeleteServer(id)
+    if errDeleteServer != nil {
+        utilruntime.HandleError(fmt.Errorf("%+v", errDeleteServer.Error()))
+        return errDeleteServer
+    }
+
+    return nil
+}
